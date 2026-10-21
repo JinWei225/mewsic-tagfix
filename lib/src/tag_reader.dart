@@ -55,6 +55,25 @@ class TagReader {
     return null;
   }
 
+  /// The lyrics embedded in [file], or null when it has none or the format
+  /// is not one we read. May be plain text or an LRC document; telling the
+  /// two apart is the caller's business.
+  static Future<String?> readLyrics(File file) async {
+    try {
+      switch (_extension(file.path)) {
+        case '.m4a':
+        case '.mp4':
+        case '.m4b':
+          return await Mp4TagParser.readLyrics(file);
+        case '.mp3':
+          return await Mp3TagParser.readLyrics(file);
+      }
+    } catch (_) {
+      // Unreadable lyrics just mean none to show.
+    }
+    return null;
+  }
+
   static String _extension(String path) {
     final dot = path.lastIndexOf('.');
     if (dot < 0) return '';

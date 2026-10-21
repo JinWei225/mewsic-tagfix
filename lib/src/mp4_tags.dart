@@ -21,6 +21,7 @@ class Mp4TagParser {
   static const _albumArtist = 'aART';
   static const _year = '©day';
   static const _genreText = '©gen';
+  static const _lyrics = '©lyr';
 
   // Sort-order variants. Normally these hold alternate sorting forms
   // ("Beatles, The"), but some store downloads ship *only* these, with no
@@ -83,37 +84,18 @@ class Mp4TagParser {
   static Future<Uint8List?> readArtwork(File file) async {
     final raf = await file.open();
     try {
-      final length = await raf.length();
-      final moov = _find(await _children(raf, 0, length), 'moov');
-      if (moov == null) return null;
-
-      for (final udta in (await _children(
-        raf,
-        moov.start,
-        moov.end,
-      )).where((b) => b.type == 'udta')) {
-        final meta = _find(await _children(raf, udta.start, udta.end), 'meta');
-        if (meta == null) continue;
-        final contentStart = await _metaContentStart(raf, meta);
-        final ilst = _find(
-          await _children(raf, contentStart, meta.end),
-          'ilst',
-        );
-        if (ilst == null) continue;
-
-        for (final item in await _children(raf, ilst.start, ilst.end)) {
-          if (item.type != 'covr') continue;
-          for (final data in await _children(raf, item.start, item.end)) {
-            if (data.type != 'data') continue;
-            final head = await _readAt(raf, data.start, 8);
-            if (head.length < 8) continue;
-            // 13 == JPEG, 14 == PNG.
-            final wellKnownType = _u32(head, 0) & 0xffffff;
-            if (wellKnownType != 13 && wellKnownType != 14) continue;
-            final len = data.end - (data.start + 8);
-            if (len <= 0 || len > _maxArtworkBytes) continue;
-            return await _readAt(raf, data.start + 8, len);
-          }
+      for (final item in await _items(raf)) {
+        if (item.type != 'covr') continue;
+        for (final data in await _children(raf, item.start, item.end)) {
+          if (data.type != 'data') continue;
+          final head = await _readAt(raf, data.start, 8);
+          if (head.length < 8) continue;
+          // 13 == JPEG, 14 == PNG.
+          final wellKnownType = _u32(head, 0) & 0xffffff;
+          if (wellKnownType != 13 && wellKnownType != 14) continue;
+          final len = data.end - (data.start + 8);
+          if (len <= 0 || len > _maxArtworkBytes) continue;
+          return await _readAt(raf, data.start + 8, len);
         }
       }
       return null;
@@ -123,6 +105,65 @@ class Mp4TagParser {
       await raf.close();
     }
   }
+
+  /// Returns the embedded lyrics (`©lyr`), or null when the file carries
+  /// none. Plain text, one line per lyric line; some taggers store an LRC
+  /// document (`[00:12.34]` timestamps) here instead, which is passed through
+  /// as it is for the caller to recognise. Read on demand, like [readArtwork].
+  static Future<String?> readLyrics(File file) async {
+    final raf = await file.open();
+    try {
+      for (final item in await _items(raf)) {
+        if (item.type != _lyrics) continue;
+        for (final data in await _children(raf, item.start, item.end)) {
+          if (data.type != 'data') continue;
+          final head = await _readAt(raf, data.start, 8);
+          if (head.length < 8) continue;
+          if (_u32(head, 0) & 0xffffff != 1) continue; // UTF-8 text only
+          final len = data.end - (data.start + 8);
+          if (len <= 0 || len > _maxLyricsBytes) continue;
+          final text = utf8
+              .decode(
+                await _readAt(raf, data.start + 8, len),
+                allowMalformed: true,
+              )
+              .trim();
+          if (text.isNotEmpty) return text;
+        }
+      }
+      return null;
+    } on FileSystemException {
+      return null;
+    } finally {
+      await raf.close();
+    }
+  }
+
+  /// Every item of the `moov`-level item lists, in file order -- the same
+  /// `ilst`s [parse] reads, never a `trak`'s decoy copy.
+  static Future<List<_Box>> _items(RandomAccessFile raf) async {
+    final length = await raf.length();
+    final moov = _find(await _children(raf, 0, length), 'moov');
+    if (moov == null) return const [];
+
+    final items = <_Box>[];
+    for (final udta in (await _children(
+      raf,
+      moov.start,
+      moov.end,
+    )).where((b) => b.type == 'udta')) {
+      final meta = _find(await _children(raf, udta.start, udta.end), 'meta');
+      if (meta == null) continue;
+      final contentStart = await _metaContentStart(raf, meta);
+      final ilst = _find(await _children(raf, contentStart, meta.end), 'ilst');
+      if (ilst == null) continue;
+      items.addAll(await _children(raf, ilst.start, ilst.end));
+    }
+    return items;
+  }
+
+  /// Lyrics run to a few kilobytes; this only stops a corrupt length.
+  static const _maxLyricsBytes = 1 << 20;
 
   /// Guards against a corrupt length pulling a huge read into memory.
   static const _maxArtworkBytes = 12 * 1024 * 1024;

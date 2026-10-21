@@ -2,11 +2,12 @@
 /// iTunes Store purchases that arrive with names missing.
 ///
 /// Parsing: [Mp4TagParser] and [Mp3TagParser] read `.m4a`/`.mp4`/`.m4b` and
-/// `.mp3` into a [RawTags]; [TagReader] picks the parser and adds filename
-/// and folder fallbacks. Completing: [SiblingTags] fills a nameless track
-/// from album-mates sharing its store IDs, [StoreCatalogue] asks the store
-/// itself, and [TagRepairer] combines every source into a [TagRepair].
-/// Writing: [TagWriter] saves a [TagEdit] back into the file.
+/// `.mp3` into a [RawTags]; [TagReader] picks the parser, adds filename and
+/// folder fallbacks, and reads embedded artwork and lyrics on demand.
+/// Completing: [SiblingTags] fills a nameless track from album-mates sharing
+/// its store IDs, [StoreCatalogue] asks the store itself, and [TagRepairer]
+/// combines every source into a [TagRepair]. Writing: [TagWriter] saves a
+/// [TagEdit] back into the file.
 library;
 
 export 'src/mp3_tag_writer.dart';

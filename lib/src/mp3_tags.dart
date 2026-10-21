@@ -76,6 +76,51 @@ class Mp3TagParser {
     }
   }
 
+  /// The embedded unsynchronised lyrics (`USLT`), or null when the file has
+  /// none. When several are present (one per language) the first wins.
+  static Future<String?> readLyrics(File file) async {
+    final raf = await file.open();
+    try {
+      final length = await raf.length();
+      String? found;
+      await _readId3v2(
+        raf,
+        length,
+        RawTags(),
+        onFrame: (id, data) {
+          if (found != null || (id != 'USLT' && id != 'ULT')) return;
+          found = _decodeLyrics(data);
+        },
+      );
+      return found;
+    } on FileSystemException {
+      return null;
+    } finally {
+      await raf.close();
+    }
+  }
+
+  /// encoding, language (3 bytes), content descriptor (null-terminated in
+  /// the frame's encoding), then the lyrics themselves.
+  static String? _decodeLyrics(Uint8List data) {
+    if (data.length < 5) return null;
+    final encoding = data[0];
+    var pos = 4;
+    if (encoding == 1 || encoding == 2) {
+      while (pos + 1 < data.length && (data[pos] != 0 || data[pos + 1] != 0)) {
+        pos += 2;
+      }
+      pos += 2;
+    } else {
+      while (pos < data.length && data[pos] != 0) {
+        pos++;
+      }
+      pos += 1;
+    }
+    if (pos >= data.length) return null;
+    return _decodeText(Uint8List.fromList([encoding, ...data.sublist(pos)]));
+  }
+
   // --- ID3v2 ----------------------------------------------------------------
 
   /// Returns the total byte length of the ID3v2 block (0 when absent), which

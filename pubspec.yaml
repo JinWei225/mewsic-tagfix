@@ -3,7 +3,7 @@ description: >-
   Reads, completes and writes music file metadata -- built for the iTunes
   Store purchases that arrive with names missing. A library plus the
   mewsic-tagfix command-line tool.
-version: 1.0.0
+version: 1.1.0
 repository: https://github.com/JinWei225/mewsic-tagfix
 publish_to: none
 
